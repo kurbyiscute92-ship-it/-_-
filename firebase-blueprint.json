@@ -14,7 +14,7 @@
         },
         "updatedBy": {
           "type": "string",
-          "description": "UID of the teacher who last updated the settings.",
+          "description": "Identifier of the role that last updated the settings (e.g., teacher).",
           "pattern": "^[a-zA-Z0-9_\\-]+$",
           "minLength": 1,
           "maxLength": 128
@@ -62,7 +62,7 @@
     },
     "MorningGreeting": {
       "title": "MorningGreeting",
-      "description": "A student's private morning mood and message submission.",
+      "description": "A student's morning mood and message submission.",
       "type": "object",
       "properties": {
         "studentId": {
@@ -80,7 +80,7 @@
         },
         "authorUid": {
           "type": "string",
-          "description": "Firebase Auth UID of the submitting user.",
+          "description": "Client classroom/device identifier of the submitting record.",
           "pattern": "^[a-zA-Z0-9_\\-]+$",
           "minLength": 1,
           "maxLength": 128
@@ -166,7 +166,7 @@
     },
     "CounselingRequest": {
       "title": "CounselingRequest",
-      "description": "A student's confidential counseling request to the teacher.",
+      "description": "A student's counseling request to the teacher.",
       "type": "object",
       "properties": {
         "studentId": {
@@ -184,7 +184,7 @@
         },
         "authorUid": {
           "type": "string",
-          "description": "Firebase Auth UID of the submitting user.",
+          "description": "Client classroom/device identifier of the submitting record.",
           "pattern": "^[a-zA-Z0-9_\\-]+$",
           "minLength": 1,
           "maxLength": 128
@@ -202,7 +202,7 @@
         },
         "message": {
           "type": "string",
-          "description": "Confidential message from student to teacher.",
+          "description": "Message from student to teacher.",
           "minLength": 1,
           "maxLength": 1000
         },
@@ -246,25 +246,6 @@
         "createdAt",
         "updatedAt"
       ]
-    },
-    "AdminUser": {
-      "title": "AdminUser",
-      "description": "Authorized teacher/admin account marker document.",
-      "type": "object",
-      "properties": {
-        "email": {
-          "type": "string",
-          "description": "Verified teacher email address.",
-          "minLength": 3,
-          "maxLength": 200
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server creation timestamp."
-        }
-      },
-      "required": ["email", "createdAt"]
     }
   },
   "firestore": {
@@ -274,19 +255,15 @@
     },
     "/students/{studentId}": {
       "schema": { "$ref": "#/entities/StudentProfile" },
-      "description": "Public classroom roster entries without PII."
+      "description": "Classroom roster entries."
     },
     "/morningGreetings/{greetingId}": {
       "schema": { "$ref": "#/entities/MorningGreeting" },
-      "description": "Private student morning greeting entries readable only by the author or teacher."
+      "description": "Student morning greeting records."
     },
     "/counselingRequests/{requestId}": {
       "schema": { "$ref": "#/entities/CounselingRequest" },
-      "description": "Confidential counseling requests readable only by the author or teacher."
-    },
-    "/admins/{uid}": {
-      "schema": { "$ref": "#/entities/AdminUser" },
-      "description": "Teacher/admin authorization documents."
+      "description": "Student counseling request records."
     }
   }
 }

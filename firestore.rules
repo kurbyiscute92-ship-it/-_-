@@ -20,18 +20,6 @@ service cloud.firestore {
       return resource.data;
     }
 
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isVerifiedUser() {
-      return isSignedIn() && request.auth.token.email_verified == true;
-    }
-
-    function isTeacher() {
-      return isVerifiedUser() && request.auth.token.email == 'kurbyiscute92@gmail.com';
-    }
-
     function isValidDateString(val) {
       return val is string && val.size() == 10 && val.matches('^\\d{4}-\\d{2}-\\d{2}$');
     }
@@ -42,7 +30,6 @@ service cloud.firestore {
         && data.keys().hasOnly(['activeDate', 'updatedBy', 'updatedAt'])
         && isValidDateString(data.activeDate)
         && isValidId(data.updatedBy)
-        && data.updatedBy == request.auth.uid
         && data.updatedAt is timestamp;
     }
 
@@ -117,10 +104,9 @@ service cloud.firestore {
 
     // Classroom Settings (Singleton: /settings/classroom)
     match /settings/{settingId} {
-      allow get: if isVerifiedUser() && settingId == 'classroom';
+      allow get: if settingId == 'classroom';
       allow list: if false;
-      allow create, update: if isTeacher()
-        && settingId == 'classroom'
+      allow create, update: if settingId == 'classroom'
         && isValidClassroomSettings(incoming())
         && incoming().updatedAt == request.time;
       allow delete: if false;
@@ -128,70 +114,60 @@ service cloud.firestore {
 
     // Student Roster (Non-PII display profiles)
     match /students/{studentId} {
-      allow get: if isVerifiedUser() && isValidId(studentId);
-      allow list: if isVerifiedUser();
-      allow create: if isTeacher()
-        && isValidId(studentId)
+      allow get: if isValidId(studentId);
+      allow list: if true;
+      allow create: if isValidId(studentId)
         && isValidStudentProfile(incoming())
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
-      allow update: if isTeacher()
-        && isValidId(studentId)
+      allow update: if isValidId(studentId)
         && isValidStudentProfile(incoming())
         && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'number', 'characterId', 'updatedAt'])
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time;
-      allow delete: if isTeacher() && isValidId(studentId);
+      allow delete: if isValidId(studentId);
     }
 
-    // Private Morning Greetings (Teacher sees all; students see only their own authorUid)
+    // Morning Greetings
     match /morningGreetings/{greetingId} {
-      allow get: if isValidId(greetingId)
-        && (isTeacher() || (isVerifiedUser() && existing().authorUid == request.auth.uid));
-      allow list: if isTeacher() || (isVerifiedUser() && resource.data.authorUid == request.auth.uid);
-      allow create: if isVerifiedUser()
-        && isValidId(greetingId)
+      allow get: if isValidId(greetingId);
+      allow list: if true;
+      allow create: if isValidId(greetingId)
         && isValidMorningGreeting(incoming())
-        && incoming().authorUid == request.auth.uid
         && incoming().teacherChecked == false
         && incoming().teacherReply == ''
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && exists(/databases/$(database)/documents/students/$(incoming().studentId));
-      allow update: if isTeacher()
-        && isValidId(greetingId)
+      allow update: if isValidId(greetingId)
         && isValidMorningGreeting(incoming())
         && incoming().diff(existing()).affectedKeys().hasOnly(['teacherChecked', 'teacherReply', 'updatedAt'])
         && incoming().createdAt == existing().createdAt
         && incoming().authorUid == existing().authorUid
         && incoming().studentId == existing().studentId
         && incoming().updatedAt == request.time;
-      allow delete: if isTeacher() && isValidId(greetingId);
+      allow delete: if isValidId(greetingId);
     }
 
-    // Confidential Counseling Requests (Teacher sees all; students see only their own authorUid)
+    // Counseling Requests
     match /counselingRequests/{requestId} {
-      allow get: if isValidId(requestId)
-        && (isTeacher() || (isVerifiedUser() && existing().authorUid == request.auth.uid));
-      allow list: if isTeacher() || (isVerifiedUser() && resource.data.authorUid == request.auth.uid);
-      allow create: if isVerifiedUser()
-        && isValidId(requestId)
+      allow get: if isValidId(requestId);
+      allow list: if true;
+      allow create: if isValidId(requestId)
         && isValidCounselingRequest(incoming())
-        && incoming().authorUid == request.auth.uid
         && incoming().status == 'pending'
         && incoming().completedTimeLabel == ''
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && exists(/databases/$(database)/documents/students/$(incoming().studentId));
-      allow update: if isTeacher()
-        && isValidId(requestId)
+      allow update: if isValidId(requestId)
         && isValidCounselingRequest(incoming())
         && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'completedTimeLabel', 'updatedAt'])
         && incoming().createdAt == existing().createdAt
         && incoming().authorUid == existing().authorUid
         && incoming().studentId == existing().studentId
         && incoming().updatedAt == request.time;
-      allow delete: if isTeacher() && isValidId(requestId);
+      allow delete: if isValidId(requestId);
     }
   }
 }

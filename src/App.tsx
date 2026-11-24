@@ -1,13 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  getRedirectResult,
-  onAuthStateChanged,
-  signInWithPopup,
-  signInWithRedirect,
-  signOut,
-  type User,
-} from 'firebase/auth';
-import {
   collection,
   deleteDoc,
   doc,
@@ -19,7 +11,6 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
-  where,
   writeBatch,
 } from 'firebase/firestore';
 import {
@@ -30,7 +21,6 @@ import {
   GraduationCap,
   Info,
   Lock,
-  LogIn,
   X,
 } from 'lucide-react';
 import { CharacterAvatar } from './components/CharacterAvatar';
@@ -40,14 +30,7 @@ import { ResetConfirmModal } from './components/ResetConfirmModal';
 import { StudentMorningAndCounseling } from './components/StudentMorningAndCounseling';
 import { TeacherCareOverview } from './components/TeacherCareOverview';
 import { CHARACTER_THEME_OPTIONS, INITIAL_STUDENTS } from './data/classroomData';
-import {
-  auth,
-  db,
-  googleProvider,
-  handleFirestoreError,
-  OperationType,
-  TEACHER_EMAIL,
-} from './firebase';
+import { db, handleFirestoreError, OperationType } from './firebase';
 import type {
   CharacterId,
   CharacterTheme,
@@ -82,7 +65,12 @@ function getCharacterById(characterId: unknown): CharacterTheme {
 
 function timestampToMs(val: unknown): number {
   if (val instanceof Timestamp) return val.toMillis();
-  if (val && typeof val === 'object' && 'toMillis' in val && typeof (val as { toMillis: () => number }).toMillis === 'function') {
+  if (
+    val &&
+    typeof val === 'object' &&
+    'toMillis' in val &&
+    typeof (val as { toMillis: () => number }).toMillis === 'function'
+  ) {
     return (val as { toMillis: () => number }).toMillis();
   }
   return 0;
@@ -105,17 +93,15 @@ function saveLocalString(key: string, value: string): void {
 }
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState<boolean>(false);
-  const [authLoading, setAuthLoading] = useState<boolean>(false);
-  const [authError, setAuthError] = useState<string>('');
-  const [popupBlocked, setPopupBlocked] = useState<boolean>(false);
-
   const [students, setStudents] = useState<Student[]>([]);
   const [studentsLoaded, setStudentsLoaded] = useState<boolean>(false);
   const [activeDate, setActiveDate] = useState<string>(getTodayIsoDate());
-  const [rawGreetings, setRawGreetings] = useState<Array<MorningGreeting & { createdAtMs: number }>>([]);
-  const [rawCounselings, setRawCounselings] = useState<Array<CounselingRequest & { createdAtMs: number }>>([]);
+  const [rawGreetings, setRawGreetings] = useState<
+    Array<MorningGreeting & { createdAtMs: number }>
+  >([]);
+  const [rawCounselings, setRawCounselings] = useState<
+    Array<CounselingRequest & { createdAtMs: number }>
+  >([]);
 
   const [selectedStudentId, setSelectedStudentId] = useState<string>(
     () => loadLocalString(SELECTED_STUDENT_KEY) ?? INITIAL_STUDENTS[0].id
@@ -137,57 +123,17 @@ export default function App() {
     throw fatalError;
   }
 
-  const isTeacher = Boolean(
-    user && user.emailVerified && user.email?.toLowerCase() === TEACHER_EMAIL.toLowerCase()
-  );
-
-  const effectiveViewMode: ViewMode = isTeacher ? viewMode : 'student';
-
   // Persist lightweight UI selection locally
   useEffect(() => {
     saveLocalString(SELECTED_STUDENT_KEY, selectedStudentId);
   }, [selectedStudentId]);
 
   useEffect(() => {
-    if (isTeacher) {
-      saveLocalString(VIEW_MODE_KEY, viewMode);
-    }
-  }, [isTeacher, viewMode]);
+    saveLocalString(VIEW_MODE_KEY, viewMode);
+  }, [viewMode]);
 
-  // Listen to Firebase Authentication state & complete any redirect sign-in
+  // Subscribe directly to Firestore collections (no login required)
   useEffect(() => {
-    void getRedirectResult(auth).catch((err) => {
-      const code =
-        err && typeof err === 'object' && 'code' in err
-          ? String((err as { code?: unknown }).code ?? '')
-          : '';
-      if (code && code !== 'auth/no-current-user') {
-        setAuthError(`Google 로그인 처리 중 오류가 발생했어요 (${code}).`);
-      }
-    });
-
-    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
-      setUser(nextUser);
-      setAuthReady(true);
-      if (nextUser) {
-        setPopupBlocked(false);
-        setAuthError('');
-      } else {
-        setStudents([]);
-        setStudentsLoaded(false);
-        setRawGreetings([]);
-        setRawCounselings([]);
-        hasBootstrappedStudentsRef.current = false;
-        hasBootstrappedSettingsRef.current = false;
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Subscribe to Firestore collections once authenticated & email-verified
-  useEffect(() => {
-    if (!authReady || !user || !user.emailVerified) return;
-
     const settingsRef = doc(db, 'settings', 'classroom');
     const unsubSettings = onSnapshot(
       settingsRef,
@@ -197,11 +143,11 @@ export default function App() {
           if (typeof data.activeDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.activeDate)) {
             setActiveDate(data.activeDate);
           }
-        } else if (isTeacher && !hasBootstrappedSettingsRef.current) {
+        } else if (!hasBootstrappedSettingsRef.current) {
           hasBootstrappedSettingsRef.current = true;
           void setDoc(settingsRef, {
             activeDate: getTodayIsoDate(),
-            updatedBy: user.uid,
+            updatedBy: 'classroom',
             updatedAt: serverTimestamp(),
           }).catch((err) => {
             try {
@@ -225,7 +171,7 @@ export default function App() {
     const unsubStudents = onSnapshot(
       studentsQuery,
       (snap) => {
-        if (snap.empty && isTeacher && !hasBootstrappedStudentsRef.current) {
+        if (snap.empty && !hasBootstrappedStudentsRef.current) {
           hasBootstrappedStudentsRef.current = true;
           const batch = writeBatch(db);
           for (const st of INITIAL_STUDENTS) {
@@ -270,10 +216,7 @@ export default function App() {
       }
     );
 
-    const greetingsQuery = isTeacher
-      ? query(collection(db, 'morningGreetings'), orderBy('createdAt', 'desc'))
-      : query(collection(db, 'morningGreetings'), where('authorUid', '==', user.uid));
-
+    const greetingsQuery = query(collection(db, 'morningGreetings'), orderBy('createdAt', 'desc'));
     const unsubGreetings = onSnapshot(
       greetingsQuery,
       (snap) => {
@@ -308,10 +251,10 @@ export default function App() {
       }
     );
 
-    const counselingsQuery = isTeacher
-      ? query(collection(db, 'counselingRequests'), orderBy('createdAt', 'desc'))
-      : query(collection(db, 'counselingRequests'), where('authorUid', '==', user.uid));
-
+    const counselingsQuery = query(
+      collection(db, 'counselingRequests'),
+      orderBy('createdAt', 'desc')
+    );
     const unsubCounselings = onSnapshot(
       counselingsQuery,
       (snap) => {
@@ -349,7 +292,7 @@ export default function App() {
       unsubGreetings();
       unsubCounselings();
     };
-  }, [authReady, user, isTeacher]);
+  }, []);
 
   // Keep student names synchronized dynamically with latest roster
   const studentNameMap = useMemo(() => {
@@ -391,76 +334,8 @@ export default function App() {
     setNotice({ id: Date.now(), type, message });
   };
 
-  const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
-
-  const handleSignIn = async () => {
-    setAuthLoading(true);
-    setAuthError('');
-    setPopupBlocked(false);
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (err) {
-      const code =
-        err && typeof err === 'object' && 'code' in err
-          ? String((err as { code?: unknown }).code ?? '')
-          : '';
-      const msg = err instanceof Error ? err.message : String(err);
-
-      if (
-        code === 'auth/popup-closed-by-user' ||
-        code === 'auth/cancelled-popup-request' ||
-        msg.includes('popup-closed-by-user')
-      ) {
-        setAuthError('로그인 창이 닫혔어요. 버튼을 눌러 다시 시도해 주세요.');
-      } else if (code === 'auth/popup-blocked' || msg.includes('popup-blocked')) {
-        setPopupBlocked(true);
-        setAuthError(
-          isInIframe
-            ? '미리보기 창 안에서는 브라우저가 로그인 팝업을 막고 있어요. 아래 "새 탭에서 열기"로 열어서 로그인해 주세요. (auth/popup-blocked)'
-            : '브라우저에서 로그인 팝업이 차단되었어요. 아래 "현재 창에서 바로 로그인"을 누르거나 팝업 차단을 허용해 주세요. (auth/popup-blocked)'
-        );
-      } else if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
-        const host = typeof window !== 'undefined' ? window.location.hostname : '';
-        setAuthError(
-          `현재 주소(${host})가 Firebase 허용 도메인에 등록되지 않았어요. Firebase Console → Authentication → Settings → Authorized domains에 '${host}'를 추가해 주세요. (auth/unauthorized-domain)`
-        );
-      } else if (code === 'auth/operation-not-allowed' || msg.includes('operation-not-allowed')) {
-        setAuthError(
-          'Firebase Console → Authentication → Sign-in method에서 Google 로그인이 켜져 있는지 확인해 주세요. (auth/operation-not-allowed)'
-        );
-      } else {
-        setAuthError(
-          `Google 로그인 중 오류가 발생했어요${code ? ` (${code})` : ''}. 잠시 후 다시 시도해 주세요.`
-        );
-      }
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleRedirectSignIn = async () => {
-    setAuthLoading(true);
-    setAuthError('');
-    try {
-      await signInWithRedirect(auth, googleProvider);
-    } catch (err) {
-      const code =
-        err && typeof err === 'object' && 'code' in err
-          ? String((err as { code?: unknown }).code ?? '')
-          : '';
-      setAuthError(`리디렉션 로그인 중 오류가 발생했어요${code ? ` (${code})` : ''}.`);
-      setAuthLoading(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    await signOut(auth);
-    setNotice(null);
-  };
-
   // Teacher Setting 1: Student Roster Management (Add / Update / Delete in Firestore)
   const handleAddStudent = async (name: string, number: number, character: CharacterTheme) => {
-    if (!isTeacher) return;
     const validName = name.trim().slice(0, 30);
     const validNumber = Math.min(999, Math.max(1, Math.floor(number)));
     const validCharId: CharacterId = character.id;
@@ -490,7 +365,6 @@ export default function App() {
     number: number,
     character: CharacterTheme
   ) => {
-    if (!isTeacher) return;
     const validName = name.trim().slice(0, 30);
     const validNumber = Math.min(999, Math.max(1, Math.floor(number)));
     const validCharId: CharacterId = character.id;
@@ -513,7 +387,6 @@ export default function App() {
   };
 
   const handleDeleteStudent = async (studentId: string) => {
-    if (!isTeacher) return;
     if (students.length <= 1) {
       showNotice('warning', '최소 1명의 학생은 명단에 남아 있어야 해요.');
       return;
@@ -553,18 +426,17 @@ export default function App() {
 
   // Teacher Setting 3: Active Morning Greeting Date
   const handleChangeActiveDate = async (nextDate: string) => {
-    if (!isTeacher || !user) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(nextDate)) return;
 
     try {
       await setDoc(doc(db, 'settings', 'classroom'), {
         activeDate: nextDate,
-        updatedBy: user.uid,
+        updatedBy: 'classroom',
         updatedAt: serverTimestamp(),
       });
       showNotice(
         'success',
-        `아침인사 날짜를 ${formatKoreanDate(nextDate)}로 설정했어요. 모든 학생 기기에도 바로 반영됩니다.`
+        `아침인사 날짜를 ${formatKoreanDate(nextDate)}로 설정했어요. 모든 기기에도 바로 반영됩니다.`
       );
     } catch (err) {
       try {
@@ -582,9 +454,11 @@ export default function App() {
     reason: string,
     messageToTeacher: string
   ) => {
-    if (!user) return;
     const targetStudent = students.find((s) => s.id === studentId);
     if (!targetStudent) return;
+
+    const cleanReason = reason.trim().slice(0, 500);
+    if (!cleanReason) return;
 
     const greetingId = `greeting-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -592,12 +466,12 @@ export default function App() {
       await setDoc(doc(db, 'morningGreetings', greetingId), {
         studentId: targetStudent.id,
         studentName: targetStudent.name.slice(0, 30),
-        authorUid: user.uid,
+        authorUid: 'classroom',
         date: activeDate,
         moodId: mood.id,
         moodEmoji: mood.emoji.slice(0, 10),
         moodLabel: mood.label.slice(0, 20),
-        reason: reason.trim().slice(0, 500),
+        reason: cleanReason,
         messageToTeacher: messageToTeacher.trim().slice(0, 500),
         timeLabel: formatTimeNow(),
         teacherChecked: false,
@@ -607,7 +481,7 @@ export default function App() {
       });
       showNotice(
         'success',
-        `${targetStudent.name} 학생의 ${formatKoreanDate(activeDate)} 아침인사(${mood.emoji} ${mood.label})가 선생님께 전달되었어요.`
+        `${targetStudent.name} 학생의 ${formatKoreanDate(activeDate)} 아침인사(${mood.emoji} ${mood.label})가 저장되었어요.`
       );
     } catch (err) {
       try {
@@ -619,8 +493,6 @@ export default function App() {
   };
 
   const handleCheckMorningGreeting = async (greetingId: string, replyText: string) => {
-    if (!isTeacher) return;
-
     const targetGreeting = morningGreetings.find((g) => g.id === greetingId);
     if (!targetGreeting || targetGreeting.teacherChecked) return;
 
@@ -653,9 +525,11 @@ export default function App() {
     preferredTime: string,
     message: string
   ) => {
-    if (!user) return;
     const targetStudent = students.find((s) => s.id === studentId);
     if (!targetStudent) return;
+
+    const cleanMessage = message.trim().slice(0, 1000);
+    if (!cleanMessage) return;
 
     const requestId = `counseling-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -663,10 +537,10 @@ export default function App() {
       await setDoc(doc(db, 'counselingRequests', requestId), {
         studentId: targetStudent.id,
         studentName: targetStudent.name.slice(0, 30),
-        authorUid: user.uid,
+        authorUid: 'classroom',
         topic,
         preferredTime: preferredTime.slice(0, 30),
-        message: message.trim().slice(0, 1000),
+        message: cleanMessage,
         timeLabel: formatTimeNow(),
         status: 'pending',
         completedTimeLabel: '',
@@ -675,7 +549,7 @@ export default function App() {
       });
       showNotice(
         'success',
-        `${targetStudent.name} 학생의 상담 신청이 선생님께 안전하게 전달되었어요. (다른 친구는 볼 수 없어요)`
+        `${targetStudent.name} 학생의 상담 신청이 안전하게 저장되었어요. (다른 친구 화면에는 보이지 않아요)`
       );
     } catch (err) {
       try {
@@ -688,7 +562,6 @@ export default function App() {
 
   // Teacher Setting 2: Update Counseling Status (including completion & undo)
   const handleUpdateCounselingStatus = async (requestId: string, status: CounselingStatus) => {
-    if (!isTeacher) return;
     const targetReq = counselingRequests.find((c) => c.id === requestId);
     if (!targetReq) return;
 
@@ -716,8 +589,6 @@ export default function App() {
   };
 
   const handleConfirmResetAll = async () => {
-    if (!isTeacher || !user) return;
-
     try {
       const [greetingsSnap, counselingsSnap, studentsSnap] = await Promise.all([
         getDocs(collection(db, 'morningGreetings')),
@@ -748,7 +619,7 @@ export default function App() {
 
       batch.set(doc(db, 'settings', 'classroom'), {
         activeDate: getTodayIsoDate(),
-        updatedBy: user.uid,
+        updatedBy: 'classroom',
         updatedAt: serverTimestamp(),
       });
 
@@ -788,10 +659,7 @@ export default function App() {
 
   return (
     <div id="top" className="min-h-screen flex flex-col bg-[#F8FAFC] text-slate-900">
-      <HeaderBar
-        isAuthenticated={Boolean(user && user.emailVerified)}
-        onSignOut={handleSignOut}
-      />
+      <HeaderBar />
 
       <ResetConfirmModal
         isOpen={isResetModalOpen}
@@ -799,309 +667,227 @@ export default function App() {
         onCancel={() => setIsResetModalOpen(false)}
       />
 
-      {!authReady ? (
-        <main className="flex-1 flex items-center justify-center p-6">
-          <div className="rounded-2xl bg-white border border-slate-200 px-6 py-5 text-sm font-medium text-slate-600">
-            학급 연결 상태를 확인하고 있어요...
-          </div>
-        </main>
-      ) : !user || !user.emailVerified ? (
-        <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
-          <div className="max-w-md w-full rounded-3xl bg-white border border-slate-200 p-6 sm:p-8 flex flex-col gap-5">
-            <div className="w-12 h-12 rounded-2xl bg-[#E0F2FE] border border-[#BAE6FD] flex items-center justify-center text-[#0284C7]">
-              <Lock className="w-6 h-6" aria-hidden="true" />
-            </div>
-
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">
-                우리 반 아침인사 · 상담 신청
-              </h1>
-              <p className="text-sm text-slate-600 mt-1.5 leading-relaxed">
-                다른 기기에서도 실시간으로 아침인사와 상담 신청을 주고받기 위해 Google 계정으로 로그인해 주세요.
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 text-xs text-slate-600 space-y-1.5 leading-relaxed">
-              <p>
-                <strong className="text-slate-900">선생님 계정:</strong> 모든 학생 명단·날짜 설정 및 전체 학생 응답을 관리할 수 있어요.
-              </p>
-              <p>
-                <strong className="text-slate-900">학생 계정:</strong> 다른 학생의 응답은 보이지 않고, 본인 기분과 상담 신청만 안전하게 보낼 수 있어요.
-              </p>
-            </div>
-
-            {authError && (
-              <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5">
-                {authError}
-              </p>
-            )}
-
-            <button
-              type="button"
-              disabled={authLoading}
-              onClick={handleSignIn}
-              className="inline-flex items-center justify-center gap-2 min-h-12 px-5 py-3 text-sm font-semibold text-white bg-[#0284C7] hover:bg-[#0369A1] disabled:opacity-60 rounded-xl transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7]"
-            >
-              <LogIn className="w-4 h-4" aria-hidden="true" />
-              <span>{authLoading ? '로그인 중...' : 'Google 계정으로 로그인하기'}</span>
-            </button>
-
-            {(popupBlocked || isInIframe) && (
-              <div className="flex flex-col gap-2">
-                {popupBlocked && !isInIframe && (
-                  <button
-                    type="button"
-                    disabled={authLoading}
-                    onClick={handleRedirectSignIn}
-                    className="inline-flex items-center justify-center gap-2 min-h-11 px-4 py-2.5 text-sm font-semibold text-[#0369A1] bg-[#F0F9FF] hover:bg-[#E0F2FE] border border-[#BAE6FD] rounded-xl transition-colors cursor-pointer"
-                  >
-                    <span>팝업 없이 현재 창에서 바로 로그인하기</span>
-                  </button>
-                )}
-                {typeof window !== 'undefined' && (
-                  <a
-                    href={window.location.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 min-h-11 px-4 py-2.5 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors text-center"
-                  >
-                    <span>새 탭에서 열어서 로그인하기</span>
-                  </a>
-                )}
-              </div>
-            )}
-          </div>
-        </main>
-      ) : (
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex flex-col gap-6">
-          {/* Workspace Mode Toolbar */}
-          <section
-            aria-label="화면 모드 전환"
-            className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-              {isTeacher ? (
-                <div
-                  role="group"
-                  aria-label="화면 보기 전환"
-                  className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200 self-start shrink-0"
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setViewMode('student');
-                      setNotice(null);
-                    }}
-                    aria-pressed={effectiveViewMode === 'student'}
-                    className={`inline-flex items-center gap-1.5 min-h-10 px-4 py-2 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] ${
-                      effectiveViewMode === 'student'
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <Eye className="w-4 h-4" aria-hidden="true" />
-                    <span>학생용 보기 화면</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setViewMode('teacher');
-                      setNotice(null);
-                    }}
-                    aria-pressed={effectiveViewMode === 'teacher'}
-                    className={`inline-flex items-center gap-1.5 min-h-10 px-4 py-2 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] ${
-                      effectiveViewMode === 'teacher'
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <GraduationCap className="w-4 h-4" aria-hidden="true" />
-                    <span>교사용 관리 화면</span>
-                  </button>
-                </div>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 text-sm font-bold text-[#0369A1] whitespace-nowrap shrink-0">
-                  <Eye className="w-4 h-4" aria-hidden="true" />
-                  <span>학생용 화면</span>
-                </span>
-              )}
-
-              <p className="text-sm text-slate-600 leading-snug">
-                {effectiveViewMode === 'teacher'
-                  ? '학생 명단과 아침인사 날짜를 설정하고, 모든 기기에서 들어온 아침인사·상담 내역을 실시간 관리해요.'
-                  : '선생님이 설정한 날짜에 맞춰 아침인사와 상담 신청을 작성하면 선생님 기기에서도 바로 확인할 수 있어요.'}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600 shrink-0">
-              {effectiveViewMode === 'teacher' ? (
-                <>
-                  <span className="tabular-nums">
-                    아침인사{' '}
-                    <strong className="text-[#0284C7]">
-                      {submittedOnActiveDateCount}/{students.length}
-                    </strong>
-                    명
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  <span className="tabular-nums">
-                    미완료 상담 <strong className="text-[#4F46E5]">{pendingCounselingCount}</strong>건
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="inline-flex items-center gap-1.5 tabular-nums">
-                    <Calendar className="w-4 h-4 text-[#0284C7]" aria-hidden="true" />
-                    <strong className="text-slate-800">{formatKoreanDate(activeDate)}</strong>
-                  </span>
-                  {selectedStudent && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span>
-                        내 화면 · <strong className="text-[#0284C7]">{selectedStudent.name}</strong>
-                      </span>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-          </section>
-
-          {/* Inline Action Feedback Notice */}
-          {notice && (
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex flex-col gap-6">
+        {/* Workspace Mode Toolbar */}
+        <section
+          aria-label="화면 모드 전환"
+          className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
             <div
-              role="status"
-              aria-live="polite"
-              className={`rounded-2xl border px-4 py-3.5 flex items-center justify-between gap-3 ${
-                notice.type === 'success'
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                  : notice.type === 'warning'
-                  ? 'bg-amber-50 border-amber-200 text-amber-900'
-                  : 'bg-[#F0F9FF] border-[#BAE6FD] text-[#0C4A6E]'
-              }`}
+              role="group"
+              aria-label="화면 보기 전환"
+              className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200 self-start shrink-0"
             >
-              <div className="flex items-center gap-2.5 text-sm font-medium">
-                {notice.type === 'success' && (
-                  <CheckCircle2 className="w-5 h-5 shrink-0" aria-hidden="true" />
-                )}
-                {notice.type === 'warning' && (
-                  <AlertTriangle className="w-5 h-5 shrink-0" aria-hidden="true" />
-                )}
-                {notice.type === 'info' && <Info className="w-5 h-5 shrink-0" aria-hidden="true" />}
-                <span>{notice.message}</span>
-              </div>
               <button
                 type="button"
-                onClick={() => setNotice(null)}
-                aria-label="안내 닫기"
-                className="p-1.5 rounded-lg hover:bg-black/5 transition-colors shrink-0 cursor-pointer"
+                onClick={() => {
+                  setViewMode('student');
+                  setNotice(null);
+                }}
+                aria-pressed={viewMode === 'student'}
+                className={`inline-flex items-center gap-1.5 min-h-10 px-4 py-2 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] ${
+                  viewMode === 'student'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
               >
-                <X className="w-4 h-4" aria-hidden="true" />
+                <Eye className="w-4 h-4" aria-hidden="true" />
+                <span>학생용 보기 화면</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('teacher');
+                  setNotice(null);
+                }}
+                aria-pressed={viewMode === 'teacher'}
+                className={`inline-flex items-center gap-1.5 min-h-10 px-4 py-2 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] ${
+                  viewMode === 'teacher'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <GraduationCap className="w-4 h-4" aria-hidden="true" />
+                <span>교사용 관리 화면</span>
               </button>
             </div>
-          )}
 
-          {!studentsLoaded ? (
-            <section className="rounded-2xl bg-white border border-slate-200 p-8 text-center text-sm text-slate-600">
-              우리 반 명단과 기록을 실시간으로 불러오고 있어요...
-            </section>
-          ) : effectiveViewMode === 'student' ? (
-            selectedStudent ? (
+            <p className="text-sm text-slate-600 leading-snug">
+              {viewMode === 'teacher'
+                ? '학생 명단과 아침인사 날짜를 설정하고, 모든 기기에서 들어온 아침인사·상담 내역을 실시간 관리해요.'
+                : '선생님이 설정한 날짜에 맞춰 아침인사와 상담 신청을 작성하면 선생님 기기에서도 바로 확인할 수 있어요.'}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600 shrink-0">
+            {viewMode === 'teacher' ? (
               <>
-                {/* Private Student Switcher (names & avatars only, zero peer data) */}
-                <section
-                  aria-label="내 이름 선택하기"
-                  className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
-                >
-                  <div className="flex items-start sm:items-center gap-2.5 text-sm text-slate-600">
-                    <Lock
-                      className="w-4 h-4 text-[#0284C7] shrink-0 mt-0.5 sm:mt-0"
-                      aria-hidden="true"
-                    />
-                    <span>
-                      <strong className="text-slate-900">내 이름 선택:</strong> 다른 친구의 응답은 볼 수 없고 오직 선생님만 확인할 수 있어요.
-                    </span>
-                  </div>
-
-                  <div
-                    role="group"
-                    aria-label="내 이름 선택 버튼"
-                    className="flex flex-wrap items-center gap-2"
-                  >
-                    {students.map((student) => {
-                      const isActive = student.id === selectedStudent.id;
-                      return (
-                        <button
-                          key={student.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedStudentId(student.id);
-                            setNotice(null);
-                          }}
-                          aria-pressed={isActive}
-                          className={`inline-flex items-center gap-2 min-h-11 px-3.5 py-2 rounded-xl border text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] ${
-                            isActive
-                              ? 'bg-slate-900 text-white border-slate-900'
-                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                          }`}
-                        >
-                          <CharacterAvatar character={student.character} size="xs" />
-                          <span>
-                            {student.number}번 {student.name}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                <StudentMorningAndCounseling
-                  key={`${selectedStudent.id}-${resetVersion}`}
-                  student={selectedStudent}
-                  activeDate={activeDate}
-                  morningGreetings={selectedStudentGreetings}
-                  counselingRequests={selectedStudentCounselings}
-                  onSubmitMorningGreeting={handleSubmitMorningGreeting}
-                  onSubmitCounseling={handleSubmitCounseling}
-                />
-
-                <MorningGreetingCalendar
-                  key={`student-cal-${resetVersion}`}
-                  mode="student"
-                  activeDate={activeDate}
-                  greetings={selectedStudentGreetings}
-                  selectedStudentName={selectedStudent.name}
-                />
+                <span className="tabular-nums">
+                  아침인사{' '}
+                  <strong className="text-[#0284C7]">
+                    {submittedOnActiveDateCount}/{students.length}
+                  </strong>
+                  명
+                </span>
+                <span aria-hidden="true">·</span>
+                <span className="tabular-nums">
+                  미완료 상담 <strong className="text-[#4F46E5]">{pendingCounselingCount}</strong>건
+                </span>
               </>
             ) : (
-              <section className="rounded-2xl bg-white border border-slate-200 p-8 text-center flex flex-col gap-2">
-                <h2 className="text-lg font-bold text-slate-900">
-                  아직 선생님이 학생 명단을 준비 중이에요
-                </h2>
-                <p className="text-sm text-slate-600">
-                  선생님이 교사 계정으로 먼저 접속하시면 우리 반 명단이 자동으로 표시됩니다.
-                </p>
+              <>
+                <span className="inline-flex items-center gap-1.5 tabular-nums">
+                  <Calendar className="w-4 h-4 text-[#0284C7]" aria-hidden="true" />
+                  <strong className="text-slate-800">{formatKoreanDate(activeDate)}</strong>
+                </span>
+                {selectedStudent && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      내 화면 · <strong className="text-[#0284C7]">{selectedStudent.name}</strong>
+                    </span>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        </section>
+
+        {/* Inline Action Feedback Notice */}
+        {notice && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={`rounded-2xl border px-4 py-3.5 flex items-center justify-between gap-3 ${
+              notice.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : notice.type === 'warning'
+                ? 'bg-amber-50 border-amber-200 text-amber-900'
+                : 'bg-[#F0F9FF] border-[#BAE6FD] text-[#0C4A6E]'
+            }`}
+          >
+            <div className="flex items-center gap-2.5 text-sm font-medium">
+              {notice.type === 'success' && (
+                <CheckCircle2 className="w-5 h-5 shrink-0" aria-hidden="true" />
+              )}
+              {notice.type === 'warning' && (
+                <AlertTriangle className="w-5 h-5 shrink-0" aria-hidden="true" />
+              )}
+              {notice.type === 'info' && <Info className="w-5 h-5 shrink-0" aria-hidden="true" />}
+              <span>{notice.message}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNotice(null)}
+              aria-label="안내 닫기"
+              className="p-1.5 rounded-lg hover:bg-black/5 transition-colors shrink-0 cursor-pointer"
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
+        {!studentsLoaded ? (
+          <section className="rounded-2xl bg-white border border-slate-200 p-8 text-center text-sm text-slate-600">
+            우리 반 명단과 기록을 실시간으로 불러오고 있어요...
+          </section>
+        ) : viewMode === 'student' ? (
+          selectedStudent ? (
+            <>
+              {/* Private Student Switcher (names & avatars only, zero peer data) */}
+              <section
+                aria-label="내 이름 선택하기"
+                className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
+              >
+                <div className="flex items-start sm:items-center gap-2.5 text-sm text-slate-600">
+                  <Lock
+                    className="w-4 h-4 text-[#0284C7] shrink-0 mt-0.5 sm:mt-0"
+                    aria-hidden="true"
+                  />
+                  <span>
+                    <strong className="text-slate-900">내 이름 선택:</strong> 다른 친구의 응답은 볼 수 없고 오직 선생님만 확인할 수 있어요.
+                  </span>
+                </div>
+
+                <div
+                  role="group"
+                  aria-label="내 이름 선택 버튼"
+                  className="flex flex-wrap items-center gap-2"
+                >
+                  {students.map((student) => {
+                    const isActive = student.id === selectedStudent.id;
+                    return (
+                      <button
+                        key={student.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedStudentId(student.id);
+                          setNotice(null);
+                        }}
+                        aria-pressed={isActive}
+                        className={`inline-flex items-center gap-2 min-h-11 px-3.5 py-2 rounded-xl border text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] ${
+                          isActive
+                            ? 'bg-slate-900 text-white border-slate-900'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <CharacterAvatar character={student.character} size="xs" />
+                        <span>
+                          {student.number}번 {student.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </section>
-            )
+
+              <StudentMorningAndCounseling
+                key={`${selectedStudent.id}-${resetVersion}`}
+                student={selectedStudent}
+                activeDate={activeDate}
+                morningGreetings={selectedStudentGreetings}
+                counselingRequests={selectedStudentCounselings}
+                onSubmitMorningGreeting={handleSubmitMorningGreeting}
+                onSubmitCounseling={handleSubmitCounseling}
+              />
+
+              <MorningGreetingCalendar
+                key={`student-cal-${resetVersion}`}
+                mode="student"
+                activeDate={activeDate}
+                greetings={selectedStudentGreetings}
+                selectedStudentName={selectedStudent.name}
+              />
+            </>
           ) : (
-            <TeacherCareOverview
-              key={`teacher-${resetVersion}`}
-              students={students}
-              activeDate={activeDate}
-              morningGreetings={morningGreetings}
-              counselingRequests={counselingRequests}
-              onChangeActiveDate={handleChangeActiveDate}
-              onAddStudent={handleAddStudent}
-              onUpdateStudent={handleUpdateStudent}
-              onDeleteStudent={handleDeleteStudent}
-              onCheckMorningGreeting={handleCheckMorningGreeting}
-              onUpdateCounselingStatus={handleUpdateCounselingStatus}
-              onRequestResetAll={() => setIsResetModalOpen(true)}
-            />
-          )}
-        </main>
-      )}
+            <section className="rounded-2xl bg-white border border-slate-200 p-8 text-center flex flex-col gap-2">
+              <h2 className="text-lg font-bold text-slate-900">
+                아직 학생 명단이 비어 있어요
+              </h2>
+              <p className="text-sm text-slate-600">
+                교사용 관리 화면의 설정에서 학생을 추가하면 바로 사용할 수 있습니다.
+              </p>
+            </section>
+          )
+        ) : (
+          <TeacherCareOverview
+            key={`teacher-${resetVersion}`}
+            students={students}
+            activeDate={activeDate}
+            morningGreetings={morningGreetings}
+            counselingRequests={counselingRequests}
+            onChangeActiveDate={handleChangeActiveDate}
+            onAddStudent={handleAddStudent}
+            onUpdateStudent={handleUpdateStudent}
+            onDeleteStudent={handleDeleteStudent}
+            onCheckMorningGreeting={handleCheckMorningGreeting}
+            onUpdateCounselingStatus={handleUpdateCounselingStatus}
+            onRequestResetAll={() => setIsResetModalOpen(true)}
+          />
+        )}
+      </main>
     </div>
   );
 }
