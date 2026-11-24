@@ -70,10 +70,10 @@ export function ResetConfirmModal({
           className="rounded-2xl bg-slate-50 border border-slate-200 p-4 text-sm text-slate-700 leading-relaxed space-y-1.5"
         >
           <p>
-            저장된 <strong>학생 명단 수정 내용, 설정 날짜, 모든 아침인사 기록, 상담 신청 내역, 작성 중인 내용</strong>이 모두 삭제됩니다.
+            클라우드 서버에 저장된 <strong>학생 명단 수정 내용, 설정 날짜, 모든 아침인사 기록, 상담 신청 내역, 작성 중인 내용</strong>이 모두 삭제됩니다.
           </p>
           <p className="text-slate-600 text-xs">
-            초기화하면 처음의 가상 학생 4명(민준, 서아, 지우, 하준)과 기본 상태로 돌아갑니다.
+            초기화하면 모든 기기에서 처음의 가상 학생 4명(민준, 서아, 지우, 하준)과 오늘 날짜 상태로 돌아갑니다.
           </p>
         </div>
 

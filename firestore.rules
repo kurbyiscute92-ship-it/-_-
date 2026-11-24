@@ -1,0 +1,197 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: Default-deny all paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isTeacher() {
+      return isVerifiedUser() && request.auth.token.email == 'kurbyiscute92@gmail.com';
+    }
+
+    function isValidDateString(val) {
+      return val is string && val.size() == 10 && val.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    // Validation Blueprints
+    function isValidClassroomSettings(data) {
+      return data.keys().hasAll(['activeDate', 'updatedBy', 'updatedAt'])
+        && data.keys().hasOnly(['activeDate', 'updatedBy', 'updatedAt'])
+        && isValidDateString(data.activeDate)
+        && isValidId(data.updatedBy)
+        && data.updatedBy == request.auth.uid
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidStudentProfile(data) {
+      return data.keys().hasAll(['name', 'number', 'characterId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'number', 'characterId', 'createdAt', 'updatedAt'])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 30
+        && data.number is int && data.number >= 1 && data.number <= 999
+        && data.characterId is string && data.characterId in ['squirrel', 'cat', 'bear', 'puppy']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMorningGreeting(data) {
+      return data.keys().hasAll([
+          'studentId', 'studentName', 'authorUid', 'date',
+          'moodId', 'moodEmoji', 'moodLabel', 'reason',
+          'messageToTeacher', 'timeLabel', 'teacherChecked',
+          'teacherReply', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'studentId', 'studentName', 'authorUid', 'date',
+          'moodId', 'moodEmoji', 'moodLabel', 'reason',
+          'messageToTeacher', 'timeLabel', 'teacherChecked',
+          'teacherReply', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.studentId)
+        && data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 30
+        && isValidId(data.authorUid)
+        && isValidDateString(data.date)
+        && data.moodId is string && data.moodId in ['happy', 'excited', 'calm', 'sleepy', 'okay', 'sad', 'angry', 'worried']
+        && data.moodEmoji is string && data.moodEmoji.size() >= 1 && data.moodEmoji.size() <= 10
+        && data.moodLabel is string && data.moodLabel.size() >= 1 && data.moodLabel.size() <= 20
+        && data.reason is string && data.reason.size() >= 1 && data.reason.size() <= 500
+        && data.messageToTeacher is string && data.messageToTeacher.size() <= 500
+        && data.timeLabel is string && data.timeLabel.size() >= 1 && data.timeLabel.size() <= 20
+        && data.teacherChecked is bool
+        && data.teacherReply is string && data.teacherReply.size() <= 500
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCounselingRequest(data) {
+      return data.keys().hasAll([
+          'studentId', 'studentName', 'authorUid', 'topic',
+          'preferredTime', 'message', 'timeLabel', 'status',
+          'completedTimeLabel', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'studentId', 'studentName', 'authorUid', 'topic',
+          'preferredTime', 'message', 'timeLabel', 'status',
+          'completedTimeLabel', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.studentId)
+        && data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 30
+        && isValidId(data.authorUid)
+        && data.topic is string && data.topic in ['친구 고민', '공부·숙제', '마음 이야기', '기타']
+        && data.preferredTime is string && data.preferredTime.size() >= 1 && data.preferredTime.size() <= 30
+        && data.message is string && data.message.size() >= 1 && data.message.size() <= 1000
+        && data.timeLabel is string && data.timeLabel.size() >= 1 && data.timeLabel.size() <= 20
+        && data.status is string && data.status in ['pending', 'confirmed', 'completed']
+        && data.completedTimeLabel is string && data.completedTimeLabel.size() <= 20
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Connectivity Check Document
+    match /test/connection {
+      allow get: if true;
+      allow list, write: if false;
+    }
+
+    // Classroom Settings (Singleton: /settings/classroom)
+    match /settings/{settingId} {
+      allow get: if isVerifiedUser() && settingId == 'classroom';
+      allow list: if false;
+      allow create, update: if isTeacher()
+        && settingId == 'classroom'
+        && isValidClassroomSettings(incoming())
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // Student Roster (Non-PII display profiles)
+    match /students/{studentId} {
+      allow get: if isVerifiedUser() && isValidId(studentId);
+      allow list: if isVerifiedUser();
+      allow create: if isTeacher()
+        && isValidId(studentId)
+        && isValidStudentProfile(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isTeacher()
+        && isValidId(studentId)
+        && isValidStudentProfile(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'number', 'characterId', 'updatedAt'])
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isTeacher() && isValidId(studentId);
+    }
+
+    // Private Morning Greetings (Teacher sees all; students see only their own authorUid)
+    match /morningGreetings/{greetingId} {
+      allow get: if isValidId(greetingId)
+        && (isTeacher() || (isVerifiedUser() && existing().authorUid == request.auth.uid));
+      allow list: if isTeacher() || (isVerifiedUser() && resource.data.authorUid == request.auth.uid);
+      allow create: if isVerifiedUser()
+        && isValidId(greetingId)
+        && isValidMorningGreeting(incoming())
+        && incoming().authorUid == request.auth.uid
+        && incoming().teacherChecked == false
+        && incoming().teacherReply == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/students/$(incoming().studentId));
+      allow update: if isTeacher()
+        && isValidId(greetingId)
+        && isValidMorningGreeting(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['teacherChecked', 'teacherReply', 'updatedAt'])
+        && incoming().createdAt == existing().createdAt
+        && incoming().authorUid == existing().authorUid
+        && incoming().studentId == existing().studentId
+        && incoming().updatedAt == request.time;
+      allow delete: if isTeacher() && isValidId(greetingId);
+    }
+
+    // Confidential Counseling Requests (Teacher sees all; students see only their own authorUid)
+    match /counselingRequests/{requestId} {
+      allow get: if isValidId(requestId)
+        && (isTeacher() || (isVerifiedUser() && existing().authorUid == request.auth.uid));
+      allow list: if isTeacher() || (isVerifiedUser() && resource.data.authorUid == request.auth.uid);
+      allow create: if isVerifiedUser()
+        && isValidId(requestId)
+        && isValidCounselingRequest(incoming())
+        && incoming().authorUid == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().completedTimeLabel == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/students/$(incoming().studentId));
+      allow update: if isTeacher()
+        && isValidId(requestId)
+        && isValidCounselingRequest(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'completedTimeLabel', 'updatedAt'])
+        && incoming().createdAt == existing().createdAt
+        && incoming().authorUid == existing().authorUid
+        && incoming().studentId == existing().studentId
+        && incoming().updatedAt == request.time;
+      allow delete: if isTeacher() && isValidId(requestId);
+    }
+  }
+}

@@ -1,0 +1,292 @@
+{
+  "entities": {
+    "ClassroomSettings": {
+      "title": "ClassroomSettings",
+      "description": "Shared classroom configuration including the active morning greeting date.",
+      "type": "object",
+      "properties": {
+        "activeDate": {
+          "type": "string",
+          "description": "Configured active morning greeting date in YYYY-MM-DD format.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "minLength": 10,
+          "maxLength": 10
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "UID of the teacher who last updated the settings.",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the last settings update."
+        }
+      },
+      "required": ["activeDate", "updatedBy", "updatedAt"]
+    },
+    "StudentProfile": {
+      "title": "StudentProfile",
+      "description": "Non-PII classroom roster entry for a student.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Student display name.",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "number": {
+          "type": "number",
+          "description": "Classroom attendance number."
+        },
+        "characterId": {
+          "type": "string",
+          "description": "Selected animal character avatar identifier.",
+          "enum": ["squirrel", "cat", "bear", "puppy"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp."
+        }
+      },
+      "required": ["name", "number", "characterId", "createdAt", "updatedAt"]
+    },
+    "MorningGreeting": {
+      "title": "MorningGreeting",
+      "description": "A student's private morning mood and message submission.",
+      "type": "object",
+      "properties": {
+        "studentId": {
+          "type": "string",
+          "description": "ID of the student roster document.",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "studentName": {
+          "type": "string",
+          "description": "Display name of the student at submission time.",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "authorUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the submitting user.",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "date": {
+          "type": "string",
+          "description": "Target morning greeting date in YYYY-MM-DD format.",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "minLength": 10,
+          "maxLength": 10
+        },
+        "moodId": {
+          "type": "string",
+          "description": "Mood identifier.",
+          "enum": ["happy", "excited", "calm", "sleepy", "okay", "sad", "angry", "worried"]
+        },
+        "moodEmoji": {
+          "type": "string",
+          "description": "Emoji representing the selected mood.",
+          "minLength": 1,
+          "maxLength": 10
+        },
+        "moodLabel": {
+          "type": "string",
+          "description": "Korean label for the selected mood.",
+          "minLength": 1,
+          "maxLength": 20
+        },
+        "reason": {
+          "type": "string",
+          "description": "Brief explanation of why the student feels this way.",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "messageToTeacher": {
+          "type": "string",
+          "description": "Optional note from the student to the teacher.",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "timeLabel": {
+          "type": "string",
+          "description": "Formatted HH:MM submission time label.",
+          "minLength": 1,
+          "maxLength": 20
+        },
+        "teacherChecked": {
+          "type": "boolean",
+          "description": "Whether the teacher has acknowledged this morning greeting."
+        },
+        "teacherReply": {
+          "type": "string",
+          "description": "Optional short reply from the teacher.",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp."
+        }
+      },
+      "required": [
+        "studentId",
+        "studentName",
+        "authorUid",
+        "date",
+        "moodId",
+        "moodEmoji",
+        "moodLabel",
+        "reason",
+        "messageToTeacher",
+        "timeLabel",
+        "teacherChecked",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CounselingRequest": {
+      "title": "CounselingRequest",
+      "description": "A student's confidential counseling request to the teacher.",
+      "type": "object",
+      "properties": {
+        "studentId": {
+          "type": "string",
+          "description": "ID of the student roster document.",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "studentName": {
+          "type": "string",
+          "description": "Display name of the student at submission time.",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "authorUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the submitting user.",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "topic": {
+          "type": "string",
+          "description": "Selected counseling topic.",
+          "enum": ["친구 고민", "공부·숙제", "마음 이야기", "기타"]
+        },
+        "preferredTime": {
+          "type": "string",
+          "description": "Preferred time slot for counseling.",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "message": {
+          "type": "string",
+          "description": "Confidential message from student to teacher.",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "timeLabel": {
+          "type": "string",
+          "description": "Formatted HH:MM submission time label.",
+          "minLength": 1,
+          "maxLength": 20
+        },
+        "status": {
+          "type": "string",
+          "description": "Current counseling workflow status.",
+          "enum": ["pending", "confirmed", "completed"]
+        },
+        "completedTimeLabel": {
+          "type": "string",
+          "description": "Formatted HH:MM completion time label.",
+          "minLength": 0,
+          "maxLength": 20
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp."
+        }
+      },
+      "required": [
+        "studentId",
+        "studentName",
+        "authorUid",
+        "topic",
+        "preferredTime",
+        "message",
+        "timeLabel",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized teacher/admin account marker document.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "description": "Verified teacher email address.",
+          "minLength": 3,
+          "maxLength": 200
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": ["email", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/settings/classroom": {
+      "schema": { "$ref": "#/entities/ClassroomSettings" },
+      "description": "Singleton document storing the active morning greeting date."
+    },
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/StudentProfile" },
+      "description": "Public classroom roster entries without PII."
+    },
+    "/morningGreetings/{greetingId}": {
+      "schema": { "$ref": "#/entities/MorningGreeting" },
+      "description": "Private student morning greeting entries readable only by the author or teacher."
+    },
+    "/counselingRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/CounselingRequest" },
+      "description": "Confidential counseling requests readable only by the author or teacher."
+    },
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Teacher/admin authorization documents."
+    }
+  }
+}

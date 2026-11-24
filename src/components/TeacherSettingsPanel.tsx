@@ -35,6 +35,7 @@ interface TeacherSettingsPanelProps {
   ) => void;
   onDeleteStudent: (studentId: string) => void;
   onUpdateCounselingStatus: (requestId: string, status: CounselingStatus) => void;
+  onRequestResetAll: () => void;
 }
 
 export function TeacherSettingsPanel({
@@ -46,6 +47,7 @@ export function TeacherSettingsPanel({
   onUpdateStudent,
   onDeleteStudent,
   onUpdateCounselingStatus,
+  onRequestResetAll,
 }: TeacherSettingsPanelProps) {
   // Add student state
   const nextDefaultNumber =
@@ -512,6 +514,25 @@ export function TeacherSettingsPanel({
             );
           })}
         </ul>
+      </div>
+
+      {/* Setting 4: Full Classroom Data Reset (Protected by Confirm Modal) */}
+      <div className="rounded-3xl bg-white border border-slate-200 p-5 sm:p-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">전체 데이터 초기화</h2>
+          <p className="text-sm text-slate-600 mt-0.5">
+            서버에 저장된 학생 명단·아침인사·상담 내역을 모두 비우고 기본 가상 학생 4명 상태로 되돌립니다.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onRequestResetAll}
+          className="inline-flex items-center justify-center gap-1.5 min-h-11 px-4 py-2 text-sm font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+        >
+          <RotateCcw className="w-4 h-4" aria-hidden="true" />
+          <span>전체 초기화</span>
+        </button>
       </div>
     </section>
   );

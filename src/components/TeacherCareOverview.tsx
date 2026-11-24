@@ -38,6 +38,7 @@ interface TeacherCareOverviewProps {
   onDeleteStudent: (studentId: string) => void;
   onCheckMorningGreeting: (greetingId: string, replyText: string) => void;
   onUpdateCounselingStatus: (requestId: string, status: CounselingStatus) => void;
+  onRequestResetAll: () => void;
 }
 
 type TeacherTab = 'overview' | 'settings';
@@ -54,6 +55,7 @@ export function TeacherCareOverview({
   onDeleteStudent,
   onCheckMorningGreeting,
   onUpdateCounselingStatus,
+  onRequestResetAll,
 }: TeacherCareOverviewProps) {
   const initialDrafts = loadDrafts();
   const [activeTab, setActiveTab] = useState<TeacherTab>(initialDrafts.teacherTab);
@@ -164,6 +166,14 @@ export function TeacherCareOverview({
               날짜 · 명단 설정
             </button>
           )}
+          <button
+            type="button"
+            onClick={onRequestResetAll}
+            className="inline-flex items-center gap-1 min-h-9 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+          >
+            <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
+            <span>전체 초기화</span>
+          </button>
         </div>
       </section>
 
@@ -177,6 +187,7 @@ export function TeacherCareOverview({
           onUpdateStudent={onUpdateStudent}
           onDeleteStudent={onDeleteStudent}
           onUpdateCounselingStatus={onUpdateCounselingStatus}
+          onRequestResetAll={onRequestResetAll}
         />
       ) : (
         <>
