@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   HeartHandshake,
   LayoutDashboard,
+  Link2,
   RotateCcw,
   Settings,
   Sun,
@@ -20,6 +21,7 @@ import { formatKoreanDate } from '../utils/dateUtils';
 import { loadDrafts, saveDrafts } from '../utils/storage';
 import { CharacterAvatar } from './CharacterAvatar';
 import { MorningGreetingCalendar } from './MorningGreetingCalendar';
+import { ShareLinksCard } from './ShareLinksCard';
 import { TeacherSettingsPanel } from './TeacherSettingsPanel';
 
 interface TeacherCareOverviewProps {
@@ -62,6 +64,7 @@ export function TeacherCareOverview({
   const [studentFilter, setStudentFilter] = useState<string>('all');
   const [greetingDateScope, setGreetingDateScope] = useState<'active' | 'all'>('active');
   const [counselingFilter, setCounselingFilter] = useState<CounselingFilter>('all');
+  const [showShareLinks, setShowShareLinks] = useState<boolean>(true);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>(
     initialDrafts.teacherReplies
   );
@@ -158,13 +161,24 @@ export function TeacherCareOverview({
             <strong className="text-[#0369A1]">{formatKoreanDate(activeDate)}</strong>
           </span>
           {activeTab === 'overview' && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('settings')}
-              className="min-h-9 px-3 py-1.5 text-xs font-semibold text-[#0369A1] bg-[#F0F9FF] hover:bg-[#E0F2FE] border border-[#BAE6FD] rounded-lg transition-colors whitespace-nowrap cursor-pointer"
-            >
-              날짜 · 명단 설정
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setShowShareLinks((prev) => !prev)}
+                aria-expanded={showShareLinks}
+                className="inline-flex items-center gap-1.5 min-h-9 px-3 py-1.5 text-xs font-semibold text-[#4F46E5] bg-[#EEF2FF] hover:bg-[#E0E7FF] border border-[#C7D2FE] rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+              >
+                <Link2 className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>{showShareLinks ? '접속 링크 접기' : '교사용·학생용 링크'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('settings')}
+                className="min-h-9 px-3 py-1.5 text-xs font-semibold text-[#0369A1] bg-[#F0F9FF] hover:bg-[#E0F2FE] border border-[#BAE6FD] rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+              >
+                날짜 · 명단 설정
+              </button>
+            </>
           )}
           <button
             type="button"
@@ -176,6 +190,8 @@ export function TeacherCareOverview({
           </button>
         </div>
       </section>
+
+      {activeTab === 'overview' && showShareLinks && <ShareLinksCard />}
 
       {activeTab === 'settings' ? (
         <TeacherSettingsPanel

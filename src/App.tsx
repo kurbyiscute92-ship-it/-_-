@@ -21,12 +21,14 @@ import {
   GraduationCap,
   Info,
   Lock,
+  RotateCcw,
   X,
 } from 'lucide-react';
 import { CharacterAvatar } from './components/CharacterAvatar';
 import { HeaderBar } from './components/HeaderBar';
 import { MorningGreetingCalendar } from './components/MorningGreetingCalendar';
 import { ResetConfirmModal } from './components/ResetConfirmModal';
+import { StudentConnectScreen } from './components/StudentConnectScreen';
 import { StudentMorningAndCounseling } from './components/StudentMorningAndCounseling';
 import { TeacherCareOverview } from './components/TeacherCareOverview';
 import { CHARACTER_THEME_OPTIONS, INITIAL_STUDENTS } from './data/classroomData';
@@ -46,8 +48,10 @@ import type {
 } from './types/classroom';
 import { formatKoreanDate, getTodayIsoDate } from './utils/dateUtils';
 import { clearAllStoredData } from './utils/storage';
+import { getRoleFromUrl } from './utils/urlLinks';
 
 const SELECTED_STUDENT_KEY = 'classroom-selected-student-v1';
+const CONNECTED_STUDENT_SESSION_KEY = 'classroom-connected-student-v1';
 const VIEW_MODE_KEY = 'classroom-view-mode-v1';
 
 function formatTimeNow(): string {
@@ -92,7 +96,30 @@ function saveLocalString(key: string, value: string): void {
   }
 }
 
+function loadSessionString(key: string): string | null {
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function saveSessionString(key: string, value: string | null): void {
+  try {
+    if (value === null) {
+      window.sessionStorage.removeItem(key);
+    } else {
+      window.sessionStorage.setItem(key, value);
+    }
+  } catch {
+    // Ignore storage error
+  }
+}
+
 export default function App() {
+  const urlRole = getRoleFromUrl();
+  const isStudentLink = urlRole === 'student';
+
   const [students, setStudents] = useState<Student[]>([]);
   const [studentsLoaded, setStudentsLoaded] = useState<boolean>(false);
   const [activeDate, setActiveDate] = useState<string>(getTodayIsoDate());
@@ -106,7 +133,12 @@ export default function App() {
   const [selectedStudentId, setSelectedStudentId] = useState<string>(
     () => loadLocalString(SELECTED_STUDENT_KEY) ?? INITIAL_STUDENTS[0].id
   );
+  const [connectedStudentId, setConnectedStudentId] = useState<string | null>(() =>
+    loadSessionString(CONNECTED_STUDENT_SESSION_KEY)
+  );
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (urlRole === 'student') return 'student';
+    if (urlRole === 'teacher') return 'teacher';
     const saved = loadLocalString(VIEW_MODE_KEY);
     return saved === 'teacher' || saved === 'student' ? saved : 'teacher';
   });
@@ -129,8 +161,14 @@ export default function App() {
   }, [selectedStudentId]);
 
   useEffect(() => {
-    saveLocalString(VIEW_MODE_KEY, viewMode);
-  }, [viewMode]);
+    saveSessionString(CONNECTED_STUDENT_SESSION_KEY, connectedStudentId);
+  }, [connectedStudentId]);
+
+  useEffect(() => {
+    if (!isStudentLink) {
+      saveLocalString(VIEW_MODE_KEY, viewMode);
+    }
+  }, [isStudentLink, viewMode]);
 
   // Subscribe directly to Firestore collections (no login required)
   useEffect(() => {
@@ -321,14 +359,23 @@ export default function App() {
     [rawCounselings, studentNameMap]
   );
 
-  const selectedStudent =
-    students.find((student) => student.id === selectedStudentId) ?? students[0] ?? null;
+  const effectiveViewMode: ViewMode = isStudentLink ? 'student' : viewMode;
+
+  const selectedStudent = isStudentLink
+    ? students.find((student) => student.id === connectedStudentId) ?? null
+    : students.find((student) => student.id === selectedStudentId) ?? students[0] ?? null;
 
   useEffect(() => {
     if (students.length > 0 && !students.some((s) => s.id === selectedStudentId)) {
       setSelectedStudentId(students[0].id);
     }
   }, [students, selectedStudentId]);
+
+  useEffect(() => {
+    if (studentsLoaded && connectedStudentId && !students.some((s) => s.id === connectedStudentId)) {
+      setConnectedStudentId(null);
+    }
+  }, [studentsLoaded, students, connectedStudentId]);
 
   const showNotice = (type: FeedbackNotice['type'], message: string) => {
     setNotice({ id: Date.now(), type, message });
@@ -627,6 +674,7 @@ export default function App() {
 
       clearAllStoredData();
       setSelectedStudentId(INITIAL_STUDENTS[0].id);
+      setConnectedStudentId(null);
       setResetVersion((v) => v + 1);
       setIsResetModalOpen(false);
 
@@ -659,7 +707,10 @@ export default function App() {
 
   return (
     <div id="top" className="min-h-screen flex flex-col bg-[#F8FAFC] text-slate-900">
-      <HeaderBar />
+      <HeaderBar
+        isStudentLink={isStudentLink}
+        hasConnectedStudent={Boolean(selectedStudent)}
+      />
 
       <ResetConfirmModal
         isOpen={isResetModalOpen}
@@ -668,92 +719,94 @@ export default function App() {
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex flex-col gap-6">
-        {/* Workspace Mode Toolbar */}
-        <section
-          aria-label="화면 모드 전환"
-          className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-            <div
-              role="group"
-              aria-label="화면 보기 전환"
-              className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200 self-start shrink-0"
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  setViewMode('student');
-                  setNotice(null);
-                }}
-                aria-pressed={viewMode === 'student'}
-                className={`inline-flex items-center gap-1.5 min-h-10 px-4 py-2 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] ${
-                  viewMode === 'student'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+        {/* Workspace Mode Toolbar (hidden in dedicated student link mode) */}
+        {!isStudentLink && (
+          <section
+            aria-label="화면 모드 전환"
+            className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+              <div
+                role="group"
+                aria-label="화면 보기 전환"
+                className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200 self-start shrink-0"
               >
-                <Eye className="w-4 h-4" aria-hidden="true" />
-                <span>학생용 보기 화면</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('student');
+                    setNotice(null);
+                  }}
+                  aria-pressed={effectiveViewMode === 'student'}
+                  className={`inline-flex items-center gap-1.5 min-h-10 px-4 py-2 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] ${
+                    effectiveViewMode === 'student'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Eye className="w-4 h-4" aria-hidden="true" />
+                  <span>학생용 보기 화면</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setViewMode('teacher');
-                  setNotice(null);
-                }}
-                aria-pressed={viewMode === 'teacher'}
-                className={`inline-flex items-center gap-1.5 min-h-10 px-4 py-2 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] ${
-                  viewMode === 'teacher'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <GraduationCap className="w-4 h-4" aria-hidden="true" />
-                <span>교사용 관리 화면</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('teacher');
+                    setNotice(null);
+                  }}
+                  aria-pressed={effectiveViewMode === 'teacher'}
+                  className={`inline-flex items-center gap-1.5 min-h-10 px-4 py-2 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] ${
+                    effectiveViewMode === 'teacher'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <GraduationCap className="w-4 h-4" aria-hidden="true" />
+                  <span>교사용 관리 화면</span>
+                </button>
+              </div>
+
+              <p className="text-sm text-slate-600 leading-snug">
+                {effectiveViewMode === 'teacher'
+                  ? '학생 명단과 아침인사 날짜를 설정하고, 모든 기기에서 들어온 아침인사·상담 내역을 실시간 관리해요.'
+                  : '선생님이 설정한 날짜에 맞춰 아침인사와 상담 신청을 작성하면 선생님 기기에서도 바로 확인할 수 있어요.'}
+              </p>
             </div>
 
-            <p className="text-sm text-slate-600 leading-snug">
-              {viewMode === 'teacher'
-                ? '학생 명단과 아침인사 날짜를 설정하고, 모든 기기에서 들어온 아침인사·상담 내역을 실시간 관리해요.'
-                : '선생님이 설정한 날짜에 맞춰 아침인사와 상담 신청을 작성하면 선생님 기기에서도 바로 확인할 수 있어요.'}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600 shrink-0">
-            {viewMode === 'teacher' ? (
-              <>
-                <span className="tabular-nums">
-                  아침인사{' '}
-                  <strong className="text-[#0284C7]">
-                    {submittedOnActiveDateCount}/{students.length}
-                  </strong>
-                  명
-                </span>
-                <span aria-hidden="true">·</span>
-                <span className="tabular-nums">
-                  미완료 상담 <strong className="text-[#4F46E5]">{pendingCounselingCount}</strong>건
-                </span>
-              </>
-            ) : (
-              <>
-                <span className="inline-flex items-center gap-1.5 tabular-nums">
-                  <Calendar className="w-4 h-4 text-[#0284C7]" aria-hidden="true" />
-                  <strong className="text-slate-800">{formatKoreanDate(activeDate)}</strong>
-                </span>
-                {selectedStudent && (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span>
-                      내 화면 · <strong className="text-[#0284C7]">{selectedStudent.name}</strong>
-                    </span>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        </section>
+            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600 shrink-0">
+              {effectiveViewMode === 'teacher' ? (
+                <>
+                  <span className="tabular-nums">
+                    아침인사{' '}
+                    <strong className="text-[#0284C7]">
+                      {submittedOnActiveDateCount}/{students.length}
+                    </strong>
+                    명
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="tabular-nums">
+                    미완료 상담 <strong className="text-[#4F46E5]">{pendingCounselingCount}</strong>건
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="inline-flex items-center gap-1.5 tabular-nums">
+                    <Calendar className="w-4 h-4 text-[#0284C7]" aria-hidden="true" />
+                    <strong className="text-slate-800">{formatKoreanDate(activeDate)}</strong>
+                  </span>
+                  {selectedStudent && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span>
+                        내 화면 · <strong className="text-[#0284C7]">{selectedStudent.name}</strong>
+                      </span>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Inline Action Feedback Notice */}
         {notice && (
@@ -793,55 +846,112 @@ export default function App() {
           <section className="rounded-2xl bg-white border border-slate-200 p-8 text-center text-sm text-slate-600">
             우리 반 명단과 기록을 실시간으로 불러오고 있어요...
           </section>
-        ) : viewMode === 'student' ? (
-          selectedStudent ? (
-            <>
-              {/* Private Student Switcher (names & avatars only, zero peer data) */}
-              <section
-                aria-label="내 이름 선택하기"
-                className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
-              >
-                <div className="flex items-start sm:items-center gap-2.5 text-sm text-slate-600">
-                  <Lock
-                    className="w-4 h-4 text-[#0284C7] shrink-0 mt-0.5 sm:mt-0"
-                    aria-hidden="true"
-                  />
-                  <span>
-                    <strong className="text-slate-900">내 이름 선택:</strong> 다른 친구의 응답은 볼 수 없고 오직 선생님만 확인할 수 있어요.
-                  </span>
-                </div>
-
-                <div
-                  role="group"
-                  aria-label="내 이름 선택 버튼"
-                  className="flex flex-wrap items-center gap-2"
-                >
-                  {students.map((student) => {
-                    const isActive = student.id === selectedStudent.id;
-                    return (
-                      <button
-                        key={student.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedStudentId(student.id);
-                          setNotice(null);
-                        }}
-                        aria-pressed={isActive}
-                        className={`inline-flex items-center gap-2 min-h-11 px-3.5 py-2 rounded-xl border text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] ${
-                          isActive
-                            ? 'bg-slate-900 text-white border-slate-900'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        <CharacterAvatar character={student.character} size="xs" />
-                        <span>
-                          {student.number}번 {student.name}
-                        </span>
-                      </button>
+        ) : effectiveViewMode === 'student' ? (
+          isStudentLink && !selectedStudent ? (
+            students.length > 0 ? (
+              <StudentConnectScreen
+                students={students}
+                activeDate={activeDate}
+                onConnect={(studentId) => {
+                  const chosen = students.find((s) => s.id === studentId);
+                  setConnectedStudentId(studentId);
+                  if (chosen) {
+                    showNotice(
+                      'info',
+                      `${chosen.number}번 ${chosen.name} 학생으로 접속했어요.`
                     );
-                  })}
-                </div>
+                  }
+                }}
+              />
+            ) : (
+              <section className="rounded-2xl bg-white border border-slate-200 p-8 text-center flex flex-col gap-2">
+                <h2 className="text-lg font-bold text-slate-900">
+                  아직 선생님이 학생 명단을 준비 중이에요
+                </h2>
+                <p className="text-sm text-slate-600">
+                  선생님이 학생 명단을 등록하시면 바로 번호와 이름을 선택해 접속할 수 있어요.
+                </p>
               </section>
+            )
+          ) : selectedStudent ? (
+            <>
+              {isStudentLink ? (
+                <section
+                  aria-label="접속 중인 학생 정보"
+                  className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+                >
+                  <div className="flex items-center gap-3">
+                    <CharacterAvatar character={selectedStudent.character} size="sm" />
+                    <div>
+                      <p className="text-base font-bold text-slate-900 tabular-nums">
+                        {selectedStudent.number}번 {selectedStudent.name} 학생
+                      </p>
+                      <p className="text-xs text-slate-600 mt-0.5 tabular-nums">
+                        {formatKoreanDate(activeDate)} · 내 기록은 선생님만 볼 수 있어요
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConnectedStudentId(null);
+                      setNotice(null);
+                    }}
+                    className="inline-flex items-center justify-center gap-1.5 min-h-10 px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>번호 · 이름 다시 선택</span>
+                  </button>
+                </section>
+              ) : (
+                /* Teacher Preview Mode Switcher */
+                <section
+                  aria-label="내 이름 선택하기"
+                  className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
+                >
+                  <div className="flex items-start sm:items-center gap-2.5 text-sm text-slate-600">
+                    <Lock
+                      className="w-4 h-4 text-[#0284C7] shrink-0 mt-0.5 sm:mt-0"
+                      aria-hidden="true"
+                    />
+                    <span>
+                      <strong className="text-slate-900">학생 선택 미리보기:</strong> 학생용 링크에서는 학생이 본인 번호와 이름을 직접 선택해 접속합니다.
+                    </span>
+                  </div>
+
+                  <div
+                    role="group"
+                    aria-label="내 이름 선택 버튼"
+                    className="flex flex-wrap items-center gap-2"
+                  >
+                    {students.map((student) => {
+                      const isActive = student.id === selectedStudent.id;
+                      return (
+                        <button
+                          key={student.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedStudentId(student.id);
+                            setNotice(null);
+                          }}
+                          aria-pressed={isActive}
+                          className={`inline-flex items-center gap-2 min-h-11 px-3.5 py-2 rounded-xl border text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] ${
+                            isActive
+                              ? 'bg-slate-900 text-white border-slate-900'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <CharacterAvatar character={student.character} size="xs" />
+                          <span>
+                            {student.number}번 {student.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
 
               <StudentMorningAndCounseling
                 key={`${selectedStudent.id}-${resetVersion}`}

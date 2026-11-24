@@ -20,6 +20,7 @@ import type {
 } from '../types/classroom';
 import { formatKoreanDate, getTodayIsoDate } from '../utils/dateUtils';
 import { CharacterAvatar } from './CharacterAvatar';
+import { ShareLinksCard } from './ShareLinksCard';
 
 interface TeacherSettingsPanelProps {
   students: Student[];
@@ -119,6 +120,8 @@ export function TeacherSettingsPanel({
       aria-label="교사용 설정"
       className="flex flex-col gap-6"
     >
+      <ShareLinksCard />
+
       {/* Top Row: Morning Greeting Date Setting + Counseling Completion Management */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         {/* Setting 3: Morning Greeting Date */}
