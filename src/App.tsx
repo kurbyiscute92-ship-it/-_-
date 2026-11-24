@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
+import {
+  getRedirectResult,
+  onAuthStateChanged,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+  type User,
+} from 'firebase/auth';
 import {
   collection,
   deleteDoc,
@@ -102,6 +109,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState<boolean>(false);
   const [authLoading, setAuthLoading] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string>('');
+  const [popupBlocked, setPopupBlocked] = useState<boolean>(false);
 
   const [students, setStudents] = useState<Student[]>([]);
   const [studentsLoaded, setStudentsLoaded] = useState<boolean>(false);
@@ -146,12 +154,25 @@ export default function App() {
     }
   }, [isTeacher, viewMode]);
 
-  // Listen to Firebase Authentication state
+  // Listen to Firebase Authentication state & complete any redirect sign-in
   useEffect(() => {
+    void getRedirectResult(auth).catch((err) => {
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? String((err as { code?: unknown }).code ?? '')
+          : '';
+      if (code && code !== 'auth/no-current-user') {
+        setAuthError(`Google 로그인 처리 중 오류가 발생했어요 (${code}).`);
+      }
+    });
+
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser);
       setAuthReady(true);
-      if (!nextUser) {
+      if (nextUser) {
+        setPopupBlocked(false);
+        setAuthError('');
+      } else {
         setStudents([]);
         setStudentsLoaded(false);
         setRawGreetings([]);
@@ -370,19 +391,64 @@ export default function App() {
     setNotice({ id: Date.now(), type, message });
   };
 
+  const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+
   const handleSignIn = async () => {
     setAuthLoading(true);
     setAuthError('');
+    setPopupBlocked(false);
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? String((err as { code?: unknown }).code ?? '')
+          : '';
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('popup-closed-by-user')) {
-        setAuthError('로그인 창이 닫혔어요. 다시 시도해 주세요.');
+
+      if (
+        code === 'auth/popup-closed-by-user' ||
+        code === 'auth/cancelled-popup-request' ||
+        msg.includes('popup-closed-by-user')
+      ) {
+        setAuthError('로그인 창이 닫혔어요. 버튼을 눌러 다시 시도해 주세요.');
+      } else if (code === 'auth/popup-blocked' || msg.includes('popup-blocked')) {
+        setPopupBlocked(true);
+        setAuthError(
+          isInIframe
+            ? '미리보기 창 안에서는 브라우저가 로그인 팝업을 막고 있어요. 아래 "새 탭에서 열기"로 열어서 로그인해 주세요. (auth/popup-blocked)'
+            : '브라우저에서 로그인 팝업이 차단되었어요. 아래 "현재 창에서 바로 로그인"을 누르거나 팝업 차단을 허용해 주세요. (auth/popup-blocked)'
+        );
+      } else if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
+        const host = typeof window !== 'undefined' ? window.location.hostname : '';
+        setAuthError(
+          `현재 주소(${host})가 Firebase 허용 도메인에 등록되지 않았어요. Firebase Console → Authentication → Settings → Authorized domains에 '${host}'를 추가해 주세요. (auth/unauthorized-domain)`
+        );
+      } else if (code === 'auth/operation-not-allowed' || msg.includes('operation-not-allowed')) {
+        setAuthError(
+          'Firebase Console → Authentication → Sign-in method에서 Google 로그인이 켜져 있는지 확인해 주세요. (auth/operation-not-allowed)'
+        );
       } else {
-        setAuthError('Google 로그인 중 문제가 발생했어요. 팝업 차단을 해제하고 다시 시도해 주세요.');
+        setAuthError(
+          `Google 로그인 중 오류가 발생했어요${code ? ` (${code})` : ''}. 잠시 후 다시 시도해 주세요.`
+        );
       }
     } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleRedirectSignIn = async () => {
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      await signInWithRedirect(auth, googleProvider);
+    } catch (err) {
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? String((err as { code?: unknown }).code ?? '')
+          : '';
+      setAuthError(`리디렉션 로그인 중 오류가 발생했어요${code ? ` (${code})` : ''}.`);
       setAuthLoading(false);
     }
   };
@@ -779,6 +845,31 @@ export default function App() {
               <LogIn className="w-4 h-4" aria-hidden="true" />
               <span>{authLoading ? '로그인 중...' : 'Google 계정으로 로그인하기'}</span>
             </button>
+
+            {(popupBlocked || isInIframe) && (
+              <div className="flex flex-col gap-2">
+                {popupBlocked && !isInIframe && (
+                  <button
+                    type="button"
+                    disabled={authLoading}
+                    onClick={handleRedirectSignIn}
+                    className="inline-flex items-center justify-center gap-2 min-h-11 px-4 py-2.5 text-sm font-semibold text-[#0369A1] bg-[#F0F9FF] hover:bg-[#E0F2FE] border border-[#BAE6FD] rounded-xl transition-colors cursor-pointer"
+                  >
+                    <span>팝업 없이 현재 창에서 바로 로그인하기</span>
+                  </button>
+                )}
+                {typeof window !== 'undefined' && (
+                  <a
+                    href={window.location.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 min-h-11 px-4 py-2.5 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors text-center"
+                  >
+                    <span>새 탭에서 열어서 로그인하기</span>
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         </main>
       ) : (
