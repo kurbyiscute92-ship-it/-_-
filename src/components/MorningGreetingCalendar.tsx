@@ -84,7 +84,6 @@ export function MorningGreetingCalendar({
     return students.find((s) => s.id === studentId)?.character;
   };
 
-  // In teacher mode when viewing all students on a specific date, calculate who did not submit yet
   const submittedStudentIdsOnSelectedDate = new Set(
     selectedDayGreetings.map((g) => g.studentId)
   );

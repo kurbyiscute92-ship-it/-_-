@@ -50,7 +50,6 @@ export function TeacherSettingsPanel({
   onUpdateCounselingStatus,
   onRequestResetAll,
 }: TeacherSettingsPanelProps) {
-  // Add student state
   const nextDefaultNumber =
     students.length > 0 ? Math.max(...students.map((s) => s.number)) + 1 : 1;
   const [newName, setNewName] = useState('');
@@ -58,14 +57,12 @@ export function TeacherSettingsPanel({
   const [newCharId, setNewCharId] = useState<CharacterId>('squirrel');
   const [addError, setAddError] = useState('');
 
-  // Edit student state
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editNumber, setEditNumber] = useState('');
   const [editCharId, setEditCharId] = useState<CharacterId>('squirrel');
   const [editError, setEditError] = useState('');
 
-  // Delete confirmation state
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const handleAddSubmit = (e: FormEvent) => {
@@ -77,7 +74,8 @@ export function TeacherSettingsPanel({
     }
 
     const parsedNum = Number(newNumber);
-    const validNum = Number.isFinite(parsedNum) && parsedNum > 0 ? Math.floor(parsedNum) : nextDefaultNumber;
+    const validNum =
+      Number.isFinite(parsedNum) && parsedNum > 0 ? Math.floor(parsedNum) : nextDefaultNumber;
     const chosenChar =
       CHARACTER_THEME_OPTIONS.find((c) => c.id === newCharId) ?? CHARACTER_THEME_OPTIONS[0];
 
